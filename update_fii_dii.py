@@ -2,23 +2,52 @@ import requests
 import csv
 import os
 from datetime import datetime
+import time
 
 def fetch_fii_dii():
     session = requests.Session()
+    
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*",
-        "Referer": "https://www.nseindia.com",
         "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer": "https://www.nseindia.com/",
+        "Connection": "keep-alive",
+        "sec-ch-ua": '"Not_A Brand";v="8", "Chromium";v="120"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Linux"',
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
     }
-    session.get("https://www.nseindia.com", headers=headers, timeout=10)
+
+    # Step 1: Hit homepage to get cookies
+    print("Getting NSE cookies...")
+    session.get("https://www.nseindia.com", headers=headers, timeout=15)
+    time.sleep(3)
+
+    # Step 2: Hit a page that warms up the session
+    session.get("https://www.nseindia.com/market-data/live-equity-market", headers=headers, timeout=15)
+    time.sleep(2)
+
+    # Step 3: Fetch FII/DII data
+    print("Fetching FII/DII data...")
     url = "https://www.nseindia.com/api/fiidiiTradeReact"
-    resp = session.get(url, headers=headers, timeout=10)
+    resp = session.get(url, headers=headers, timeout=15)
+    
+    print(f"Status code: {resp.status_code}")
+    print(f"Response: {resp.text[:500]}")
+    
     resp.raise_for_status()
     data = resp.json()
 
-    fii_net = float(str(data[0]["netVal"]).replace(",", ""))
-    dii_net = float(str(data[1]["netVal"]).replace(",", ""))
+    # Parse — NSE returns a list, FII is index 0, DII is index 1
+    print(f"Raw data: {data}")
+    
+    fii_net = float(str(data[0]["netVal"]).replace(",", "").strip())
+    dii_net = float(str(data[1]["netVal"]).replace(",", "").strip())
+
     print(f"✅ FII Net: ₹{fii_net} Cr | DII Net: ₹{dii_net} Cr")
     return fii_net, dii_net
 
