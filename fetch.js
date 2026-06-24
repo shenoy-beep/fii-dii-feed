@@ -1,20 +1,57 @@
 const https = require('https');
+const http = require('http');
 const fs = require('fs');
-const path = require('path');
 
 function get(url) {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, { timeout: 20000 }, (res) => {
+    const lib = url.startsWith('https') ? https : http;
+    const req = lib.get(url, { timeout: 20000 }, (res) => {
       const chunks = [];
       res.on('data', chunk => chunks.push(chunk));
-      res.on('end', () => resolve({
-        status: res.statusCode,
-        body: Buffer.concat(chunks).toString()
-      }));
+      res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString() }));
     });
     req.on('error', reject);
     req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
   });
+}
+
+async function fetchWithProxy(proxyName, buildUrl, parseResponse) {
+  try {
+    console.log(`Trying ${proxyName}...`);
+    const res = await get(buildUrl());
+    console.log(`  Status: ${res.status}`);
+    console.log(`  Body preview: ${res.body.substring(0, 200)}`);
+    if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
+    return parseResponse(res.body);
+  } catch (e) {
+    console.log(`  ❌ ${proxyName} failed: ${e.message}`);
+    return null;
+  }
+}
+
+async function fetchFiiDii() {
+  const nseUrl = 'https://www.nseindia.com/api/fiidiiTradeReact';
+
+  // Proxy 1: allorigins
+  let data = await fetchWithProxy('allorigins', 
+    () => `https://api.allorigins.win/get?url=${encodeURIComponent(nseUrl)}`,
+    body => JSON.parse(JSON.parse(body).contents)
+  );
+
+  // Proxy 2: corsproxy.io
+  if (!data) data = await fetchWithProxy('corsproxy.io',
+    () => `https://corsproxy.io/?${encodeURIComponent(nseUrl)}`,
+    body => JSON.parse(body)
+  );
+
+  // Proxy 3: thingproxy
+  if (!data) data = await fetchWithProxy('thingproxy',
+    () => `https://thingproxy.freeboard.io/fetch/${nseUrl}`,
+    body => JSON.parse(body)
+  );
+
+  if (!data) throw new Error('All proxies failed');
+  return data;
 }
 
 function updateCSV(filepath, value) {
@@ -22,7 +59,7 @@ function updateCSV(filepath, value) {
   const header = 'Date,Time,Open,High,Low,Close,Volume';
   const row = `${today},00:00,${value},${value},${value},${value},0`;
 
-  fs.mkdirSync(path.dirname(filepath), { recursive: true });
+  fs.mkdirSync(require('path').dirname(filepath), { recursive: true });
 
   let lines = [];
   if (fs.existsSync(filepath)) {
@@ -39,18 +76,8 @@ function updateCSV(filepath, value) {
 }
 
 async function main() {
-  const target = encodeURIComponent('https://www.nseindia.com/api/fiidiiTradeReact');
-  const proxyUrl = `https://api.allorigins.win/get?url=${target}`;
-
-  console.log('Fetching via allorigins proxy...');
-  const res = await get(proxyUrl);
-  console.log('Status:', res.status);
-  console.log('Raw:', res.body.substring(0, 300));
-
-  if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
-
-  const wrapper = JSON.parse(res.body);
-  const data = JSON.parse(wrapper.contents);
+  const data = await fetchFiiDii();
+  console.log('Raw parsed data:', JSON.stringify(data).substring(0, 400));
 
   const fiiNet = parseFloat(String(data[0].netVal).replace(/,/g, ''));
   const diiNet = parseFloat(String(data[1].netVal).replace(/,/g, ''));
@@ -61,4 +88,4 @@ async function main() {
   updateCSV('data/DII_NET/data.csv', diiNet);
 }
 
-main().catch(e => { console.error('❌', e.message); process.exit(1); });
+main().catch(e => { console.error('❌ Fatal:', e.message); process.exit(1); });
