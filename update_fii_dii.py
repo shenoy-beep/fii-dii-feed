@@ -5,80 +5,70 @@ from datetime import datetime
 import time
 
 def fetch_fii_dii():
-    session = requests.Session()
+    const https = require('https');
+    const fs = require('fs');
+    const path = require('path');
     
-    headers = {
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Referer": "https://www.nseindia.com/",
-        "Connection": "keep-alive",
-        "sec-ch-ua": '"Not_A Brand";v="8", "Chromium";v="120"',
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": '"Linux"',
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-origin",
+    function get(url) {
+      return new Promise((resolve, reject) => {
+        const req = https.get(url, { timeout: 20000 }, (res) => {
+          const chunks = [];
+          res.on('data', chunk => chunks.push(chunk));
+          res.on('end', () => resolve({
+            status: res.statusCode,
+            body: Buffer.concat(chunks).toString()
+          }));
+        });
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+      });
     }
 
-    # Step 1: Hit homepage to get cookies
-    print("Getting NSE cookies...")
-    session.get("https://www.nseindia.com", headers=headers, timeout=15)
-    time.sleep(3)
-
-    # Step 2: Hit a page that warms up the session
-    session.get("https://www.nseindia.com/market-data/live-equity-market", headers=headers, timeout=15)
-    time.sleep(2)
-
-    # Step 3: Fetch FII/DII data
-    print("Fetching FII/DII data...")
-    url = "https://www.nseindia.com/api/fiidiiTradeReact"
-    resp = session.get(url, headers=headers, timeout=15)
+function updateCSV(filepath, value) {
+      const today = new Date().toISOString().split('T')[0];
+      const header = 'Date,Time,Open,High,Low,Close,Volume';
+      const row = `${today},00:00,${value},${value},${value},${value},0`;
     
-    print(f"Status code: {resp.status_code}")
-    print(f"Response: {resp.text[:500]}")
+      fs.mkdirSync(path.dirname(filepath), { recursive: true });
     
-    resp.raise_for_status()
-    data = resp.json()
-
-    # Parse — NSE returns a list, FII is index 0, DII is index 1
-    print(f"Raw data: {data}")
+      let lines = [];
+      if (fs.existsSync(filepath)) {
+        lines = fs.readFileSync(filepath, 'utf8').trim().split('\n').filter(Boolean);
+      }
+      if (!lines.length || !lines[0].startsWith('Date')) lines.unshift(header);
     
-    fii_net = float(str(data[0]["netVal"]).replace(",", "").strip())
-    dii_net = float(str(data[1]["netVal"]).replace(",", "").strip())
+      const idx = lines.findIndex(l => l.startsWith(today));
+      if (idx >= 0) lines[idx] = row;
+      else lines.push(row);
+    
+      fs.writeFileSync(filepath, lines.join('\n') + '\n');
+      console.log(`✅ ${filepath} → ${value}`);
+    }
 
-    print(f"✅ FII Net: ₹{fii_net} Cr | DII Net: ₹{dii_net} Cr")
-    return fii_net, dii_net
+async function main() {
+  // Use allorigins CORS proxy — same method that works in c0dezer01's browser dashboard
+  const target = encodeURIComponent('https://www.nseindia.com/api/fiidiiTradeReact');
+  const proxyUrl = `https://api.allorigins.win/get?url=${target}`;
 
-def update_csv(filepath, value):
-    today = datetime.now().strftime("%Y-%m-%d")
-    row = [today, "00:00", value, value, value, value, 0]
+  console.log('Fetching via allorigins proxy...');
+  const res = await get(proxyUrl);
+  console.log('Status:', res.status);
+  console.log('Raw:', res.body.substring(0, 300));
 
-    rows = []
-    if os.path.exists(filepath):
-        with open(filepath, "r") as f:
-            rows = list(csv.reader(f))
+  if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
 
-    header = ["Date", "Time", "Open", "High", "Low", "Close", "Volume"]
-    if not rows:
-        rows.append(header)
+  // allorigins wraps the response: { contents: "...", status: {...} }
+  const wrapper = JSON.parse(res.body);
+  const data = JSON.parse(wrapper.contents);
+  console.log('Parsed data:', JSON.stringify(data).substring(0, 300));
 
-    updated = False
-    for i, r in enumerate(rows):
-        if r and r[0] == today:
-            rows[i] = row
-            updated = True
-            break
-    if not updated:
-        rows.append(row)
+  const fiiNet = parseFloat(String(data[0].netVal).replace(/,/g, ''));
+  const diiNet = parseFloat(String(data[1].netVal).replace(/,/g, ''));
 
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-    with open(filepath, "w", newline="") as f:
-        csv.writer(f).writerows(rows)
-    print(f"✅ Updated {filepath}")
+  console.log(`✅ FII: ₹${fiiNet} Cr | DII: ₹${diiNet} Cr`);
 
-if __name__ == "__main__":
-    fii, dii = fetch_fii_dii()
-    update_csv("data/FII_NET/data.csv", fii)
-    update_csv("data/DII_NET/data.csv", dii)
+  updateCSV('data/FII_NET/data.csv', fiiNet);
+  updateCSV('data/DII_NET/data.csv', diiNet);
+}
+
+main().catch(e => { console.error('❌', e.message); process.exit(1); });
