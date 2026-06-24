@@ -38,8 +38,11 @@ async function fetchFiiDii() {
     if (res.status === 200) {
       const data = JSON.parse(res.body);
       // Groww returns { fiiData: {...}, diiData: {...} }
-      const fii = parseFloat(String(data.fiiData?.netVal || data.fiiNetValue || data[0]?.netVal).replace(/,/g, ''));
-      const dii = parseFloat(String(data.diiData?.netVal || data.diiNetValue || data[1]?.netVal).replace(/,/g, ''));
+      // NSE returns DII at [0], FII at [1] — and uses netValue not netVal
+      const diiEntry = data.find(d => d.category === 'DII');
+      const fiiEntry = data.find(d => d.category === 'FII/FPI');
+      const fii = parseFloat(String(fiiEntry.netValue).replace(/,/g, ''));
+      const dii = parseFloat(String(diiEntry.netValue).replace(/,/g, ''));
       if (!isNaN(fii) && !isNaN(dii)) return { fii, dii };
       console.log('  Parsed full:', JSON.stringify(data).substring(0, 500));
     }
