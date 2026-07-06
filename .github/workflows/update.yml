@@ -10,12 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5 # Upgraded from v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5 # Upgraded from v4
         with:
-          node-version: '22'
+          node-version: '24' # Upgraded to target Node 24 directly
 
       - name: Run fetcher
         run: node fetch.js
