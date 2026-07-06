@@ -5,17 +5,19 @@ indicator("FII & DII Flow", overlay=false, max_bars_back=500)
 // Last updated: 2026-07-03
 
 // ── IMPORT YOUR 2026 DATA LIBRARY ──
-// Change 'YourUsername' to match your exact TradingView username profile handles
 import nithinshenoy7/FII_DII_Data_2026/1 as data2026
 
 show_fii = input.bool(true, "Show FII", group="Display Toggles")
 show_dii = input.bool(true, "Show DII", group="Display Toggles")
 show_net = input.bool(true, "Show Net (FII - DII)", group="Display Toggles")
 
-
+// 1. Generate date formats for both tracking types
 d = str.format("{0,date,yyyy-MM-dd}", time)
+int currentDateInt = year(time) * 10000 + month(time) * 100 + dayofmonth(time)
 
-fii_val = switch d
+
+// 2. Dynamic Local Block (GitHub appends new lines directly inside here)
+local_fii = switch d
     "2026-04-01" => -802.02
     "2026-04-02" => -4830.29
     "2026-04-03" => -1575.69
@@ -86,7 +88,7 @@ fii_val = switch d
     "2026-07-03" => 1355.33
     => float(na)
 
-dii_val = switch d
+local_dii = switch d
     "2026-04-01" => 1817.6
     "2026-04-02" => 4386.07
     "2026-04-03" => 6022.56
@@ -158,6 +160,12 @@ dii_val = switch d
     => float(na)
 
 
+// 3. Fallback Priority Calculation
+// If the GitHub code has updated today's data, use it. Otherwise, look it up in the library.
+fii_val = not na(local_fii) ? local_fii : data2026.getFII(currentDateInt)
+dii_val = not na(local_dii) ? local_dii : data2026.getDII(currentDateInt)
+
+// 4. Analysis and Visualisation Calculations
 float net_val = (not na(fii_val) and not na(dii_val)) ? fii_val - dii_val : float(na)
 color net_col = not na(net_val) and net_val >= 0 ? color.new(color.blue, 15) : color.new(color.maroon, 15)
 
@@ -192,6 +200,8 @@ if barstate.islast and not na(fii_val) and not na(dii_val)
      style=label.style_label_up, size=size.normal,
      color=color.new(fii_sold_more ? color.blue : color.red, 0),
      textcolor=color.white)
+
+// ── Dashboard Metrics Table ──
 var table t = table.new(position.top_right, 2, 4, border_width=1)
 if barstate.islast and not na(fii_val)
     table.cell(t, 0, 0, "Entity (Today)", bgcolor=color.gray, text_color=color.white, text_size=size.small)
